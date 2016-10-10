@@ -79,6 +79,23 @@ public class VoteService {
 		redisTemplate.opsForHash().increment(articleKey, "votes", 1L);
 	}
 	
+	public void tagArticle(Long id,String[] tags){
+        String articleKey = ArticleUtil.formArticleKey(id);
+        for(String tag:tags){
+            String tagKey = ArticleUtil.formTagKey(tag);
+            redisTemplate.opsForSet().add(tagKey,articleKey);
+        }
+    }
+	
+    public void delete(Long id){
+        String articleKey = ArticleUtil.formArticleKey(id);
+        redisTemplate.delete(articleKey);
+        redisTemplate.boundZSetOps(ArticleUtil.KEY_SCORE).remove(articleKey);
+        redisTemplate.boundZSetOps(ArticleUtil.KEY_TIME).remove(articleKey);
+        String votedKey = ArticleUtil.formVoteKey(id);
+        redisTemplate.delete(votedKey);
+        //delete tag interset
+    }
 	
 	public List<Article> getArticleRank(String zrangeKey, int page) {
 		int start = (page - 1 ) * ArticleUtil.ARTICLES_PER_PAGE;
@@ -102,6 +119,19 @@ public class VoteService {
 		}).collect(Collectors.toList());
 		
 		return list;
+	}
+	
+	public List<Article> getArticleRankByTag(int page, String zrangkey, String tag) {
+		String newZsetKey = ArticleUtil.formScoreTagKey(zrangkey, tag);
+		Boolean had = redisTemplate.hasKey(newZsetKey);
+		if(!had) {
+			Long rs = redisTemplate.opsForZSet().intersectAndStore(ArticleUtil.formTagKey(tag), zrangkey, newZsetKey);
+				if(rs == 1 ) {
+					redisTemplate.expire(newZsetKey, 60, TimeUnit.SECONDS);
+				}
+		}
+			
+		return getArticleRank(newZsetKey, page);
 	}
 	
 	public List<Article> getArticleRankByScore(int page) {
